@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -9,15 +12,29 @@ const root = "/tmp/"
 
 var log = &Logger{}
 
-var fileMasks = []string{"*.csproj", "*.fsproj"} // todo config
+var warnRepositorySize = 5
+var fileMasks = []string{"*.csproj", "*.fsproj"}
 
 func main() {
-	connStr := "postgres://<todo creds>:55432/dotnet?sslmode=disable" // todo config
+	envWarnRepositorySize := os.Getenv("WARN_REPOSITORY_SIZE")
+	if len(envWarnRepositorySize) > 0 {
+		warnRepositorySize, _ = strconv.Atoi(envWarnRepositorySize)
+	}
+
+	envFileMasks := os.Getenv("FILE_MASKS")
+	if len(envFileMasks) > 0 {
+		fileMasks = strings.Split(envFileMasks, "|")
+	}
+
+	connectionString := os.Getenv("PG_CONNECTION")
+	if len(connectionString) < 1 {
+		panic("Could you set PG_CONNECTION")
+	}
 
 	var err error
 	pgsqlStorage := PgsqlStorage{}
 
-	storage, err := pgsqlStorage.Init(connStr)
+	storage, err := pgsqlStorage.Init(connectionString)
 	if err != nil {
 		log.Fatal("Can't init local storage.")
 		return
@@ -49,9 +66,9 @@ func RunJob(storage Storage) error {
 	}
 
 	for _, gitUrl := range repositories {
-		dotnetRepository := GetDotnetRepository(gitUrl)
-		if dotnetRepository == nil {
-			// todo disable repository
+		dotnetRepository, err := GetDotnetRepository(gitUrl)
+		if err != nil {
+			log.Warnf("GetDotnetRepository | %s | %v", dotnetRepository.GitUrl, err)
 			continue
 		}
 
@@ -68,8 +85,9 @@ func RunJob(storage Storage) error {
 
 				log.Infof("Received packages for %s", dotnetRepository.GitUrl)
 			} else {
-				// todo disable repository
 				dotnetRepository.RemoveDirectory()
+				log.Warnf("GetDotnetRepository | len(packages) == 0 | %s | %v", dotnetRepository.GitUrl, err)
+
 				continue
 			}
 		} else {
@@ -109,18 +127,24 @@ func (repository *DotnetRepository) GetProjectInfo() ([]DotnetPackage, []DotnetP
 			filePath := strings.Replace(strings.ReplaceAll(file, "\\", "/"), repository.Path, "", 1)
 
 			for _, refPk := range project.Items {
-				// todo convert to semver version X.Y.Z-qwerty
+
 				var version = refPk.Version
 				if version == "" {
 					version = refPk.VersionElm
 				}
 
+				// convert X.Y.Z.W to semver X.Y.Z-W
+				re := regexp.MustCompile(`^(\d+\.\d+\.\d+)\.(\d+.*)`)
+
+				semver := re.ReplaceAllString(version, "$1-$2")
+
 				pack := &DotnetPackage{
-					Package:    refPk.Package,
-					Version:    version,
-					File:       filePath,
-					Owner:      repository.Project,
-					Repository: repository.Repository,
+					Package:         refPk.Package,
+					Version:         semver,
+					OriginalVersion: version,
+					File:            filePath,
+					Owner:           repository.Project,
+					Repository:      repository.Repository,
 				}
 
 				dotnetPackages = append(dotnetPackages, *pack)

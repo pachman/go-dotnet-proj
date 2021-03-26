@@ -19,13 +19,12 @@ func (storage *PgsqlStorage) Init(connection string) (Storage, error) {
 		panic(err)
 	}
 
-// https://github.com/theory/pg-semver/blob/main/doc/semver.mmd
-
-// todo original version before transformation invalid semver
+	// https://github.com/theory/pg-semver/blob/main/doc/semver.mmd
 
 	db.Exec(`CREATE TABLE packages(
  package varchar(500) NOT NULL,
  version SEMVER NOT NULL,
+ original_version varchar(255) NOT NULL,
  file varchar(1000) NOT NULL,
  owner varchar(255) NOT NULL,
  repository varchar(255) NOT NULL,
@@ -69,17 +68,17 @@ func (storage *PgsqlStorage) InsertPackages(packages []DotnetPackage) error {
 		var valueArgs []interface{}
 
 		i := 1
-		const fieldCount = 5
+		const fieldCount = 6
 
 		for _, dp := range chunk {
 			valueStrings = append(valueStrings, storage.ConcatPlaceholder(&i, fieldCount))
 
-			valueArgs = append(valueArgs, dp.Package, dp.Version, dp.File, dp.Owner, dp.Repository)
+			valueArgs = append(valueArgs, dp.Package, dp.Version, dp.OriginalVersion, dp.File, dp.Owner, dp.Repository)
 		}
 
-		sql := "INSERT INTO packages (package, version, file, owner, repository, modify_date) VALUES " +
+		sql := "INSERT INTO packages (package, version, original_version, file, owner, repository, modify_date) VALUES " +
 			strings.Join(valueStrings, ",") +
-			"ON CONFLICT (package, file, owner, repository) DO UPDATE SET modify_date = excluded.modify_date, version = excluded.version"
+			"ON CONFLICT (package, file, owner, repository) DO UPDATE SET modify_date = excluded.modify_date, version = excluded.version, original_version = excluded.original_version"
 
 		stmt, err := storage.db.Prepare(sql)
 		if err != nil {

@@ -1,11 +1,12 @@
 package main
 
 type DotnetPackage struct {
-	Package    string
-	Version    string
-	File       string
-	Owner      string
-	Repository string
+	Package         string
+	Version         string
+	OriginalVersion string
+	File            string
+	Owner           string
+	Repository      string
 }
 
 type DotnetProjectFramework struct {

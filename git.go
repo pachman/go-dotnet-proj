@@ -15,7 +15,7 @@ type DotnetRepository struct {
 	Repository string
 }
 
-func GetDotnetRepository(gitUrl string) *DotnetRepository {
+func GetDotnetRepository(gitUrl string) (*DotnetRepository, error) {
 	dotnetRepository := GetRepositoryPath(gitUrl, root)
 
 	var err error
@@ -26,7 +26,7 @@ func GetDotnetRepository(gitUrl string) *DotnetRepository {
 			log.Errorf("GetDotnetRepository | NativeGitClone %s | %v", dotnetRepository.Path, err)
 			dotnetRepository.RemoveDirectory()
 
-			return nil
+			return nil, err
 		}
 
 		err = dotnetRepository.NativeGitSparseCheckout()
@@ -34,7 +34,7 @@ func GetDotnetRepository(gitUrl string) *DotnetRepository {
 			log.Errorf("GetDotnetRepository | NativeGitSparseCheckout %s | %v", dotnetRepository.Path, err)
 			dotnetRepository.RemoveDirectory()
 
-			return nil
+			return nil, err
 		}
 	}
 
@@ -42,24 +42,22 @@ func GetDotnetRepository(gitUrl string) *DotnetRepository {
 	if err != nil {
 		dotnetRepository.RemoveDirectory()
 
-		return nil
+		return nil, err
 	}
 
 	size, _ := DirSize(dotnetRepository.Path)
-
-	var warnRepositorySize int64 = 5 // todo config
 
 	if size > warnRepositorySize {
 		log.Warnf("GetDotnetRepository | DirSize | Big repository [%s] size %vmb", dotnetRepository.GitUrl, size)
 	}
 
-	return dotnetRepository
+	return dotnetRepository, nil
 }
 
 func GetRepositoryPath(gitUrl string, root string) *DotnetRepository {
 	splitUrl := strings.Split(gitUrl, "/")
 	repositoryName := strings.Replace(splitUrl[len(splitUrl)-1], ".git", "", -1)
-	projectName := splitUrl[len(splitUrl)-2]
+	projectName := strings.Split(splitUrl[0], ":")[1]
 
 	return &DotnetRepository{
 		GitUrl:     gitUrl,
@@ -73,24 +71,8 @@ func (repository *DotnetRepository) RemoveDirectory() {
 	os.RemoveAll(repository.Path)
 }
 
-func (repository *DotnetRepository) GetGitUrlWithCredentials() string {
-	return repository.GitUrl
-
-	//if config.Bitbucket.CloneType == "http" {
-	//
-	//
-	//if strings.Index(repository.GitUrl, config.Bitbucket.URL) != -1 {
-	//	credential := "https://" + url.PathEscape(config.Bitbucket.Username) + ":" + url.PathEscape(config.Bitbucket.Password) + "@"
-	//
-	//	return strings.ReplaceAll(repository.GitUrl, "https://", credential)
-	//}
-	//
-	//return repository.GitUrl
-	//}
-}
-
 func (repository *DotnetRepository) NativeGitClone() error {
-	err := os.MkdirAll(repository.Path, 0755)
+	err := os.MkdirAll(repository.Path, 0655)
 	if err != nil {
 		return err
 	}
@@ -99,7 +81,7 @@ func (repository *DotnetRepository) NativeGitClone() error {
 	cmd.Dir = repository.Path
 	cmd.Run()
 
-	cmd = exec.Command("git", "remote", "add", "origin", repository.GetGitUrlWithCredentials())
+	cmd = exec.Command("git", "remote", "add", "origin", repository.GitUrl)
 	cmd.Dir = repository.Path
 
 	return cmd.Run()
@@ -140,7 +122,7 @@ func (repository *DotnetRepository) NativeGitSparseCheckout() error {
 	return cmd.Run()
 }
 
-func DirSize(path string) (int64, error) {
+func DirSize(path string) (int, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -151,5 +133,5 @@ func DirSize(path string) (int64, error) {
 		}
 		return err
 	})
-	return size / (1024 * 1024), err
+	return int(size / (1024 * 1024)), err
 }
